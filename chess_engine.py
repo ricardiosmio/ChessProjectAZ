@@ -1,10 +1,9 @@
 import chess
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model, save_model
-from tensorflow.keras.layers import Dense, Flatten, Input
+from tensorflow.keras.layers import Input, Conv2D, BatchNormalization, Activation, Add, Flatten, Dense
+from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.losses import mse
 import random
 from collections import deque
 import os
@@ -17,27 +16,44 @@ GAMMA = 0.99
 ALPHA = 0.001
 MEMORY_SIZE = 100000
 BATCH_SIZE = 64
-EPSILON_DECAY = 0.995
-MIN_EPSILON = 0.01
 EPISODES = 1000  # Number of games to play for training
 
-# Register mse as a serializable function
-tf.keras.utils.register_keras_serializable()(mse)
+def resnet_block(input_tensor, filters, kernel_size=3):
+    x = Conv2D(filters, kernel_size, padding='same')(input_tensor)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters, kernel_size, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Add()([x, input_tensor])
+    x = Activation('relu')(x)
+    return x
 
-@tf.keras.utils.register_keras_serializable()
-def create_model(input_shape):
-    model = Sequential([
-        Input(shape=input_shape),
-        Flatten(),
-        Dense(128, activation='relu'),
-        Dense(64, activation='relu'),
-        Dense(1, activation='linear')
-    ])
-    model.compile(optimizer=Adam(learning_rate=ALPHA), loss='mse', metrics=['accuracy'])
+def alphazero_model(input_shape, num_res_blocks=19):
+    inputs = Input(shape=input_shape)
+    x = Conv2D(256, (3, 3), padding='same', activation='relu')(inputs)
+    
+    for _ in range(num_res_blocks):
+        x = resnet_block(x, 256)
+    
+    # Policy head
+    policy = Conv2D(2, (1, 1), padding='same', activation='relu')(x)
+    policy = Flatten()(policy)
+    policy = Dense(128, activation='relu')(policy)
+    policy = Dense(4672, activation='softmax')(policy)  # 4672 possible moves in chess
+    
+    # Value head
+    value = Conv2D(1, (1, 1), padding='same', activation='relu')(x)
+    value = Flatten()(value)
+    value = Dense(256, activation='relu')(value)
+    value = Dense(1, activation='tanh')(value)
+    
+    model = Model(inputs=inputs, outputs=[policy, value])
+    model.compile(optimizer=Adam(learning_rate=ALPHA), loss=['categorical_crossentropy', 'mse'], metrics=['accuracy'])
+    
     return model
 
 def encode_board(board):
-    encoded = np.zeros((64, 12), dtype=int)
+    encoded = np.zeros((8, 8, 12), dtype=int)
     piece_map = {
         'P': 0, 'N': 1, 'B': 2, 'R': 3, 'Q': 4, 'K': 5,
         'p': 6, 'n': 7, 'b': 8, 'r': 9, 'q': 10, 'k': 11
@@ -46,106 +62,60 @@ def encode_board(board):
         piece = board.piece_at(square)
         if piece:
             piece_type = piece.symbol()
-            index = chess.square_rank(square) * 8 + chess.square_file(square)
-            encoded[index][piece_map[piece_type]] = 1
+            rank = chess.square_rank(square)
+            file = chess.square_file(square)
+            encoded[rank][file][piece_map[piece_type]] = 1
     return encoded
 
-class DQNAgent:
-    def __init__(self, state_shape, start_games=100):
-        self.state_shape = state_shape
-        self.start_games = start_games
-        if os.path.exists('models/trained_model.h5'):
-            self.model = load_model('models/trained_model.h5')
-            self.model.compile(optimizer=Adam(learning_rate=ALPHA), loss='mse', metrics=['accuracy'])
-            self.model.evaluate(np.zeros((1, 64, 12)), np.zeros((1, 1)))  # Ensure metrics are compiled by evaluating the model
-        else:
-            self.model = create_model(state_shape)
-        self.target_model = create_model(state_shape)
-        self.memory = deque(maxlen=MEMORY_SIZE)
-        
-        # Load epsilon value from file if it exists
-        self.epsilon = 1.0
-        epsilon_file = 'epsilon_value.txt'
-        if os.path.isfile(epsilon_file):
-            with open(epsilon_file, 'r') as f:
-                self.epsilon = float(f.read())
-                
-        self.epsilon_min = 0.01  # Minimum epsilon value
-        self.epsilon_decay = 0.995  # Decay rate for epsilon
+class MCTS:
+    def __init__(self, policy_value_fn, c_puct=5, n_playout=1000):
+        self.policy_value_fn = policy_value_fn
+        self.c_puct = c_puct
+        self.n_playout = n_playout
+        self._node = {}
 
-    def create_model(self, state_shape):
-        # Define your model creation logic here
+    def _playout(self, state):
+        # Implement the playout logic
         pass
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+    def get_move(self, state):
+        for _ in range(self.n_playout):
+            self._playout(state)
+        # Return the most visited move
+        pass
+
+class AlphaZeroAgent:
+    def __init__(self, model):
+        self.model = model
+        self.mcts = MCTS(self.policy_value_fn)
+
+    def policy_value_fn(self, state):
+        encoded_state = np.expand_dims(encode_board(state), axis=0)
+        policy, value = self.model.predict(encoded_state)
+        return policy[0], value[0]
 
     def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return random.choice(list(state.legal_moves))
-        q_values = []
-        best_move = None
-        for move in state.legal_moves:
-            state.push(move)
-            q_value = self.model.predict(np.expand_dims(encode_board(state), axis=0))[0][0]
-            q_values.append(q_value)
-            if best_move is None or q_value > max(q_values):
-                best_move = move
-            state.pop()
-        return best_move
-
-    def replay(self):
-        if len(self.memory) < BATCH_SIZE:
-            return
-        batch = random.sample(self.memory, BATCH_SIZE)
-        for state, action, reward, next_state, done in batch:
-            target = reward
-            if not done:
-                target = reward + GAMMA * np.amax(self.target_model.predict(np.expand_dims(next_state, axis=0))[0])
-            target_f = self.model.predict(np.expand_dims(state, axis=0))
-            target_f[0][0] = target
-            self.model.fit(np.expand_dims(state, axis=0), target_f, epochs=1, verbose=0)
-        if self.epsilon > MIN_EPSILON:
-            self.epsilon *= EPSILON_DECAY
-
-    def update_target_model(self):
-        self.target_model.set_weights(self.model.get_weights())
-
-    def save_model(self, filepath):
-        save_model(self.model, filepath)
+        move = self.mcts.get_move(state)
+        return move
 
     def train_agent(self, num_games):
         logging.info(f"Starting training session for {num_games} games")
         for i in range(num_games):
             logging.info(f"Game {i + 1} started")
             board = chess.Board()
-            state = encode_board(board)
-            total_reward = 0
-            done = False
+            states, mcts_probs, values = [], [], []
 
-            while not done:
-                action = self.act(board)
-                board.push(action)
-                reward = evaluate_board(board)
-                next_state = encode_board(board)
-                done = board.is_game_over()
+            while not board.is_game_over():
+                move = self.act(board)
+                states.append(encode_board(board))
+                mcts_probs.append(self.mcts.get_move_probs(board))
+                board.push(move)
+                values.append(evaluate_board(board))
 
-                self.remember(state, action, reward, next_state, done)
-                state = next_state
-                total_reward += reward
-
-                if done:
-                    self.update_target_model()
-                    logging.info(f"Game {i + 1} ended, Total Reward: {total_reward}, Epsilon: {self.epsilon}")
-                    break
-
-            self.replay()
-
-        # Save the updated epsilon value
-        with open('epsilon_value.txt', 'w') as f:
-            f.write(str(self.epsilon))
-
-        self.save_model(f"models/trained_model_{self.start_games + num_games}.keras")
+                if board.is_game_over():
+                    winner = 1 if board.result() == '1-0' else -1
+                    for state, mcts_prob in zip(states, mcts_probs):
+                        self.model.fit(np.expand_dims(state, axis=0), [mcts_prob, winner], epochs=1, verbose=0)
 
 def evaluate_board(board):
     if board.is_checkmate():
@@ -165,5 +135,6 @@ def evaluate_board(board):
 if __name__ == "__main__":
     if not os.path.exists('models'):
         os.makedirs('models')
-    agent = DQNAgent(state_shape=(64, 12))
+    model = alphazero_model(input_shape=(8, 8, 12))
+    agent = AlphaZeroAgent(model)
     agent.train_agent(EPISODES)
