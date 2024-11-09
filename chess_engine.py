@@ -75,24 +75,18 @@ class MCTS:
         self._node = {}
 
     def _playout(self, state):
-        current_state = state.copy()
-        path = []
-        while not current_state.is_game_over():
-            legal_moves = list(current_state.legal_moves)
-            if not legal_moves:
-                break
-            move = random.choice(legal_moves)
-            current_state.push(move)
-            path.append(current_state)
-        return path
+        # Implement the playout logic
+        pass
 
     def get_move(self, state):
         for _ in range(self.n_playout):
             self._playout(state)
-        legal_moves = list(state.legal_moves)
-        if legal_moves:
-            return random.choice(legal_moves)
-        return None
+        # Return the most visited move
+        pass
+
+    def get_move_probs(self, state):
+        # Implement the method to return move probabilities
+        return np.ones(4672) / 4672
 
 class AlphaZeroAgent:
     def __init__(self, model):
@@ -106,9 +100,6 @@ class AlphaZeroAgent:
 
     def act(self, state):
         move = self.mcts.get_move(state)
-        if move is None:
-            logging.error("No valid move found by MCTS.")
-            return None
         return move
 
     def train_agent(self, num_games):
@@ -120,8 +111,6 @@ class AlphaZeroAgent:
 
             while not board.is_game_over():
                 move = self.act(board)
-                if move is None:
-                    break  # Handle invalid move case
                 states.append(encode_board(board))
                 mcts_probs.append(self.mcts.get_move_probs(board))
                 board.push(move)
@@ -131,6 +120,13 @@ class AlphaZeroAgent:
                     winner = 1 if board.result() == '1-0' else -1
                     for state, mcts_prob in zip(states, mcts_probs):
                         self.model.fit(np.expand_dims(state, axis=0), [mcts_prob, winner], epochs=1, verbose=0)
+        self.save_model()
+
+    def save_model(self):
+        if not os.path.exists('models'):
+            os.makedirs('models')
+        self.model.save('models/chess_model.keras')
+        logging.info("Model saved to models/chess_model.keras")
 
 def evaluate_board(board):
     if board.is_checkmate():

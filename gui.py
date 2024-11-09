@@ -277,7 +277,7 @@ class ChessGUI:
         elif self.board.is_seventyfive_moves():
             self.status_label.config(text="Draw by 75-move rule.")
         elif self.board.is_variant_draw():
-            self.status_label.config(text="Draw!")
+            self.status_label
 
     def engine_move(self):
         if not self.board.is_game_over():
