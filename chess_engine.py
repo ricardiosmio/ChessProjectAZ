@@ -2,7 +2,7 @@ import chess
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Input, Conv2D, BatchNormalization, Activation, Add, Flatten, Dense
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.optimizers import Adam
 from concurrent.futures import ThreadPoolExecutor
 import random
@@ -186,6 +186,12 @@ def evaluate_board(board):
 if __name__ == "__main__":
     if not os.path.exists('models'):
         os.makedirs('models')
-    model = alphazero_model(input_shape=(8, 8, 12))
+    model_path = 'models/trained_model_100.keras'
+    if os.path.exists(model_path):
+        model = load_model(model_path)
+        print("Loaded trained model from", model_path)
+    else:
+        model = alphazero_model(input_shape=(8, 8, 12))
+        print("Initialized new model")
     agent = AlphaZeroAgent(model)
     agent.train_agent(EPISODES)
