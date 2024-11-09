@@ -277,17 +277,20 @@ class ChessGUI:
         elif self.board.is_seventyfive_moves():
             self.status_label.config(text="Draw by 75-move rule.")
         elif self.board.is_variant_draw():
-            self.status_label
+            self.status_label.config(text="Draw!")
 
     def engine_move(self):
         if not self.board.is_game_over():
             move = self.agent.act(self.board)
-            self.board.push(move)
-            self.highlight_last_move_from = move.from_square
-            self.highlight_last_move_to = move.to_square
-            self.update_board()
-            self.update_move_history()
-            self.check_game_status()
+            if move is not None:
+                self.board.push(move)
+                self.highlight_last_move_from = move.from_square
+                self.highlight_last_move_to = move.to_square
+                self.update_board()
+                self.update_move_history()
+                self.check_game_status()
+            else:
+                self.status_label.config(text="Engine failed to produce a move.")
         else:
             self.check_game_status()
 
