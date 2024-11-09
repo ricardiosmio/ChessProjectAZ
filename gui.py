@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import simpledialog
 import chess
 from PIL import Image, ImageTk
-from chess_engine import DQNAgent, encode_board  # Import the engine
+from chess_engine import AlphaZeroAgent, encode_board, alphazero_model  # Import the engine
 import logging
 
 # Configure logging
@@ -62,7 +62,7 @@ class ChessGUI:
         self.piece_images = self.load_piece_images()
         self.selected_square = None
         self.is_white_player = True  # By default, the player is white
-        self.agent = DQNAgent((64, 12))  # Initialize the agent
+        self.agent = AlphaZeroAgent(alphazero_model((8, 8, 12)))  # Initialize the agent
         self.highlight_last_move_from = None
         self.highlight_last_move_to = None
         self.update_board()
@@ -290,7 +290,6 @@ class ChessGUI:
             self.check_game_status()
         else:
             self.check_game_status()
-
 
     def play_multiple_games(self):
         num_games = simpledialog.askinteger("Input", "How many games do you want to play?")
