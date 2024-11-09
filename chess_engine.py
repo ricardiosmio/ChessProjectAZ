@@ -75,14 +75,24 @@ class MCTS:
         self._node = {}
 
     def _playout(self, state):
-        # Implement the playout logic
-        pass
+        current_state = state.copy()
+        path = []
+        while not current_state.is_game_over():
+            legal_moves = list(current_state.legal_moves)
+            if not legal_moves:
+                break
+            move = random.choice(legal_moves)
+            current_state.push(move)
+            path.append(current_state)
+        return path
 
     def get_move(self, state):
         for _ in range(self.n_playout):
             self._playout(state)
-        # Return the most visited move
-        pass
+        legal_moves = list(state.legal_moves)
+        if legal_moves:
+            return random.choice(legal_moves)
+        return None
 
 class AlphaZeroAgent:
     def __init__(self, model):
@@ -98,7 +108,7 @@ class AlphaZeroAgent:
         move = self.mcts.get_move(state)
         if move is None:
             logging.error("No valid move found by MCTS.")
-            return None  # or handle the case appropriately
+            return None
         return move
 
     def train_agent(self, num_games):
