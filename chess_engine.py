@@ -96,6 +96,9 @@ class AlphaZeroAgent:
 
     def act(self, state):
         move = self.mcts.get_move(state)
+        if move is None:
+            logging.error("No valid move found by MCTS.")
+            return None  # or handle the case appropriately
         return move
 
     def train_agent(self, num_games):
@@ -107,6 +110,8 @@ class AlphaZeroAgent:
 
             while not board.is_game_over():
                 move = self.act(board)
+                if move is None:
+                    break  # Handle invalid move case
                 states.append(encode_board(board))
                 mcts_probs.append(self.mcts.get_move_probs(board))
                 board.push(move)
